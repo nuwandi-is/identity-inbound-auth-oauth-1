@@ -29,18 +29,15 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.oltu.oauth2.common.message.types.ResponseType;
 import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.carbon.identity.application.authentication.framework.model.AuthenticatedUser;
-import org.wso2.carbon.identity.application.common.model.User;
 import org.wso2.carbon.identity.core.util.IdentityIOStreamUtils;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.oauth.IdentityOAuthAdminException;
-import org.wso2.carbon.identity.oauth.cache.AppInfoCache;
 import org.wso2.carbon.identity.oauth.cache.CacheEntry;
 import org.wso2.carbon.identity.oauth.cache.OAuthCache;
 import org.wso2.carbon.identity.oauth.cache.OAuthCacheKey;
 import org.wso2.carbon.identity.oauth.common.OAuthConstants;
 import org.wso2.carbon.identity.oauth.common.exception.InvalidOAuthClientException;
 import org.wso2.carbon.identity.oauth.config.OAuthServerConfiguration;
-import org.wso2.carbon.identity.oauth.dao.OAuthAppDAO;
 import org.wso2.carbon.identity.oauth.dao.OAuthAppDO;
 import org.wso2.carbon.identity.oauth.dao.OAuthConsumerDAO;
 import org.wso2.carbon.identity.oauth.internal.OAuthComponentServiceHolder;
@@ -57,22 +54,31 @@ import org.wso2.carbon.registry.core.exceptions.RegistryException;
 import org.wso2.carbon.user.api.UserStoreException;
 import org.wso2.carbon.user.core.service.RealmService;
 import org.wso2.carbon.user.core.util.UserCoreUtil;
-import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
 import org.wso2.carbon.utils.multitenancy.MultitenantUtils;
 
-import javax.xml.namespace.QName;
-import javax.xml.stream.XMLInputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamReader;
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.xml.namespace.QName;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
+
+
 
 /**
  * Utility methods for OAuth 2.0 implementation
@@ -82,8 +88,7 @@ public class OAuth2Util {
     public static final String REMOTE_ACCESS_TOKEN = "REMOTE_ACCESS_TOKEN";
     public static final String JWT_ACCESS_TOKEN = "JWT_ACCESS_TOKEN";
     public static final String ACCESS_TOKEN_DO = "AccessTokenDo";
-    public static final String OAUTH2_VALIDATION_MESSAGE_CONTEXT = "OAuth2TokenValidationMessageContext";
-
+    
 
     /*
      * OPTIONAL. A JSON string containing a space-separated list of scopes associated with this token, in the format
@@ -146,7 +151,7 @@ public class OAuth2Util {
      */
     public static final String IAT = "iat";
 
-
+    
     private static Log log = LogFactory.getLog(OAuth2Util.class);
     private static boolean cacheEnabled = OAuthServerConfiguration.getInstance().isCacheEnabled();
     private static OAuthCache cache = OAuthCache.getInstance();
@@ -160,9 +165,9 @@ public class OAuth2Util {
     private OAuth2Util(){
 
     }
-
+    
     /**
-     *
+     * 
      * @return
      */
     public static OAuthAuthzReqMessageContext getAuthzRequestContext() {
@@ -173,7 +178,7 @@ public class OAuth2Util {
     }
 
     /**
-     *
+     * 
      * @param context
      */
     public static void setAuthzRequestContext(OAuthAuthzReqMessageContext context) {
@@ -184,7 +189,7 @@ public class OAuth2Util {
     }
 
     /**
-     *
+     * 
      */
     public static void clearAuthzRequestContext() {
 	authzRequestContext.remove();
@@ -192,9 +197,9 @@ public class OAuth2Util {
 	    log.debug("Cleared OAuthAuthzReqMessageContext");
 	}
     }
-
+    
     /**
-     *
+     * 
      * @return
      */
     public static OAuthTokenReqMessageContext getTokenRequestContext() {
@@ -205,7 +210,7 @@ public class OAuth2Util {
     }
 
     /**
-     *
+     * 
      * @param context
      */
     public static void setTokenRequestContext(OAuthTokenReqMessageContext context) {
@@ -216,7 +221,7 @@ public class OAuth2Util {
     }
 
     /**
-     *
+     * 
      */
     public static void clearTokenRequestContext() {
 	tokenRequestContext.remove();
@@ -911,28 +916,6 @@ public class OAuth2Util {
         }
     }
 
-    public static List<String> getOIDCScopes(String tenantDomain) {
-        try {
-            int tenantId = OAuthComponentServiceHolder.getInstance().getRealmService().getTenantManager()
-                    .getTenantId(tenantDomain);
-            Registry registry = OAuth2ServiceComponentHolder.getRegistryService().getConfigSystemRegistry(tenantId);
-
-            if (registry.resourceExists(OAuthConstants.SCOPE_RESOURCE_PATH)) {
-                Resource resource = registry.get(OAuthConstants.SCOPE_RESOURCE_PATH);
-                Properties properties = resource.getProperties();
-                Enumeration e = properties.propertyNames();
-                List<String> scopes = new ArrayList();
-                while (e.hasMoreElements()) {
-                    scopes.add((String) e.nextElement());
-                }
-                return scopes;
-            }
-        } catch (RegistryException | UserStoreException e) {
-            log.error("Error while retrieving registry collection for :" + OAuthConstants.SCOPE_RESOURCE_PATH, e);
-        }
-        return new ArrayList<>();
-    }
-
     public static AccessTokenDO getAccessTokenDOfromTokenIdentifier(String accessTokenIdentifier) throws
             IdentityOAuth2Exception {
         boolean cacheHit = false;
@@ -1036,41 +1019,4 @@ public class OAuth2Util {
         }
         return claimConfig.toString();
     }
-
-    /**
-     * Get Oauth application information
-     *
-     * @param clientId
-     * @return Oauth app information
-     * @throws IdentityOAuth2Exception
-     * @throws InvalidOAuthClientException
-     */
-    public static OAuthAppDO getAppInformationByClientId(String clientId)
-            throws IdentityOAuth2Exception, InvalidOAuthClientException {
-
-        OAuthAppDO oAuthAppDO = AppInfoCache.getInstance().getValueFromCache(clientId);
-        if (oAuthAppDO != null) {
-            return oAuthAppDO;
-        } else {
-            oAuthAppDO = new OAuthAppDAO().getAppInformation(clientId);
-            AppInfoCache.getInstance().addToCache(clientId, oAuthAppDO);
-            return oAuthAppDO;
-        }
-    }
-
-    /**
-     * Get the tenant domain of an oauth application
-     *
-     * @param oAuthAppDO
-     * @return
-     */
-    public static String getTenantDomainOfOauthApp(OAuthAppDO oAuthAppDO) {
-        String tenantDomain = MultitenantConstants.SUPER_TENANT_DOMAIN_NAME;
-        if (oAuthAppDO != null) {
-            AuthenticatedUser appDeveloper = oAuthAppDO.getUser();
-            tenantDomain = appDeveloper.getTenantDomain();
-        }
-        return tenantDomain;
-    }
-
 }
